@@ -73,47 +73,11 @@ export const usePlayerStore = create<PlayerStore>()(
 
     const newQueue = queue ?? get().queue;
     set({ currentSong: song, queue: newQueue, currentTime: 0, duration: song.duration });
-    if (newQueue.length > 1) {
-      const idx = newQueue.findIndex((s) => s.id === song.id);
-      newQueue.slice(idx + 1, idx + 4).forEach(async (ns) => {
-        if (!ns.audioUrl) {
-          try {
-            const r = await fetch(`/api/yt/stream/${ns.id}`);
-            const j = await r.json();
-            if (j?.url) {
-              const q = get().queue;
-              const t = q.find((x) => x.id === ns.id) as unknown as { audioUrl: string } | undefined;
-              if (t) t.audioUrl = j.url;
-            }
-          } catch {}
-        }
-      });
-    }
 
     const { Howl } = await import("howler");
 
-    let src = song.audioUrl;
-    if (!src) {
-      try {
-        const r = await fetch(`/api/yt/stream/${song.id}`);
-        const j = await r.json();
-        if (j?.url) {
-          src = j.url;
-          const cur = get().currentSong;
-          if (cur && cur.id === song.id) set({ currentSong: { ...cur, audioUrl: src } });
-          const q = get().queue;
-          const t = q.find((x) => x.id === song.id) as unknown as { audioUrl: string } | undefined;
-          if (t) t.audioUrl = src;
-        }
-      } catch {}
-    }
-    if (!src) {
-      console.warn("No audio url for", song.id);
-      setTimeout(() => get().nextSong(), 800);
-      return;
-    }
-    const ext = src.split("?")[0].split(".").pop()?.toLowerCase();
-    const fmt = ext === "webm" ? ["webm"] : ext === "mp4" ? ["mp4"] : ["m4a", "mp3"];
+    const src = `/api/yt/audio/${song.id}`;
+    const fmt = ["m4a", "webm", "mp4", "mp3"];
     howlInstance = new Howl({
       src: [src],
       html5: true,
@@ -158,26 +122,32 @@ export const usePlayerStore = create<PlayerStore>()(
             const tracks: { videoId: string; title: string; artists?: { name: string }[]; thumbnails?: { url: string }[] }[] = w.tracks || [];
             const nxt = tracks.find((t) => t.videoId && t.videoId !== cs.id);
             if (nxt?.videoId) {
-              const sr = await fetch(`/api/yt/stream/${nxt.videoId}`).then((x) => x.json()).catch(() => null);
-              const url2 = sr?.url;
-              if (url2) {
-                const thumb = nxt.thumbnails?.[nxt.thumbnails.length - 1]?.url || "";
-                const nxtSong = { id: nxt.videoId, title: nxt.title, artist: nxt.artists?.map((a) => a.name).join(", ") || "", album: "", coverUrl: thumb, audioUrl: url2, duration: 0 } as Song;
-                const more = tracks.slice(0, 8).filter((t) => t.videoId && t.videoId !== nxt.videoId).map((t) => ({ id: t.videoId, title: t.title, artist: t.artists?.map((a) => a.name).join(", ") || "", album: "", coverUrl: t.thumbnails?.[t.thumbnails.length - 1]?.url || "", audioUrl: "", duration: 0 } as Song));
-                get().playSong(nxtSong, [nxtSong, ...more]);
-                return;
-              }
+              const thumb = nxt.thumbnails?.[nxt.thumbnails.length - 1]?.url || "";
+              const nxtSong = { id: nxt.videoId, title: nxt.title, artist: nxt.artists?.map((a) => a.name).join(", ") || "", album: "", coverUrl: thumb, audioUrl: "", duration: 0 } as Song;
+              const more = tracks.slice(0, 8).filter((t) => t.videoId && t.videoId !== nxt.videoId).map((t) => ({ id: t.videoId, title: t.title, artist: t.artists?.map((a) => a.name).join(", ") || "", album: "", coverUrl: t.thumbnails?.[t.thumbnails.length - 1]?.url || "", audioUrl: "", duration: 0 } as Song));
+              get().playSong(nxtSong, [nxtSong, ...more]);
+              return;
             }
           } catch {}
         }
       },
       onloaderror: (_id, err) => {
         console.warn("Audio load error", err);
-        setTimeout(() => get().nextSong(), 700);
+        const curId = get().currentSong?.id;
+        let tries = (curId ? ((globalThis as unknown as { __loadFails?: Record<string, number> }).__loadFails ||= {})[curId] || 0 : 0);
+        const gf = globalThis as unknown as { __loadFails?: Record<string, number> };
+        gf.__loadFails ||= {};
+        if (curId) gf.__loadFails[curId] = tries + 1;
+        if (tries < 2) setTimeout(() => get().nextSong(), 1500);
       },
       onplayerror: (_id, err) => {
         console.warn("Audio play error", err);
-        setTimeout(() => get().nextSong(), 700);
+        const curId2 = get().currentSong?.id;
+        let tries2 = (curId2 ? ((globalThis as unknown as { __loadFails?: Record<string, number> }).__loadFails ||= {})[curId2] || 0 : 0);
+        const gf2 = globalThis as unknown as { __loadFails?: Record<string, number> };
+        gf2.__loadFails ||= {};
+        if (curId2) gf2.__loadFails[curId2] = tries2 + 1;
+        if (tries2 < 2) setTimeout(() => get().nextSong(), 1500);
       },
     });
 

@@ -50,21 +50,40 @@ export async function ytSearch(q: string, filter?: string, limit = 20) {
 
 export async function ytStream(videoId: string) {
   const inn = await getYT();
-  const info = await inn.getInfo(videoId);
-  const formats = info.streaming_data?.adaptive_formats || [];
-  const audioOnly = formats.filter((f: any) => f.mime_type?.startsWith("audio/") && f.url)
-    .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-  const best = audioOnly[0] as any;
-  if (!best?.url) throw new Error("no audio url for " + videoId);
-  const ext = best.mime_type?.includes("webm") ? "webm" : "m4a";
-  return {
-    videoId,
-    title: info.basic_info?.title || videoId,
-    duration: info.basic_info?.duration || 0,
-    url: best.url,
-    ext,
-    thumbnail: info.basic_info?.thumbnail?.[0]?.url || "",
-  };
+  const clients: Array<undefined | string> = [undefined, "YTMUSIC", "ANDROID", "ANDROID_MUSIC"];
+  let lastErr: unknown = null;
+  for (const client of clients) {
+    try {
+      const info: any = client
+        ? await inn.getInfo(videoId, { client: client as never })
+        : await inn.getInfo(videoId);
+      const musicInfo: any = client ? null : await inn.music.getInfo(videoId).catch(() => null);
+      const candidates: any[] = [];
+      if (info?.streaming_data?.adaptive_formats) candidates.push(...info.streaming_data.adaptive_formats);
+      if (info?.streaming_data?.formats) candidates.push(...info.streaming_data.formats);
+      if (musicInfo?.streaming_data?.adaptive_formats) candidates.push(...musicInfo.streaming_data.adaptive_formats);
+      const audioOnly = candidates.filter((f: any) => f.mime_type?.startsWith("audio/") && f.url)
+        .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+      if (audioOnly.length) {
+        const best = audioOnly[0] as any;
+        const ext = best.mime_type?.includes("webm") ? "webm" : best.mime_type?.includes("mp4") ? "mp4" : "m4a";
+        return {
+          videoId,
+          title: info.basic_info?.title || musicInfo?.basic_info?.title || videoId,
+          duration: info.basic_info?.duration || musicInfo?.basic_info?.duration || 0,
+          url: best.url,
+          ext,
+          thumbnail: info.basic_info?.thumbnail?.[0]?.url || musicInfo?.basic_info?.thumbnail?.[0]?.url || "",
+        };
+      }
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error("no audio url for " + videoId + (lastErr ? ": " + String(lastErr) : ""));
+}
+
+export async function ytStreamProxyUrl(videoId: string) {
+  const s = await ytStream(videoId);
+  return s.url;
 }
 
 export async function ytLyrics(videoId: string) {

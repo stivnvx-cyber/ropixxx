@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Ropixxx',
   webDir: 'out',
   server: {
-    url: 'https://ropixxx-abc123.netlify.app',
+    url: 'https://ropixxx.netlify.app',
     cleartext: true,
     androidScheme: 'http'
   }

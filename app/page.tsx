@@ -25,11 +25,9 @@ export default function HomePage() {
     }).catch(()=>setErr("Failed to load — is yt-api running?")).finally(()=>setLoading(false));
   }, []);
   async function playYt(s: YtSong, queue: YtSong[] = songs) {
-    const st = await fetch(`/api/yt/stream/${s.videoId}`).then(r=>r.json()).catch(()=>null);
-    const url = st?.url || "";
-    const thumb = s.thumbnails?.[s.thumbnails.length-1]?.url || st?.thumbnail || "";
+    const thumb = s.thumbnails?.[s.thumbnails.length-1]?.url || "";
     const artist = s.artists?.map(a=>a.name).join(", ") || "Unknown";
-    const q = queue.map(x=>({ id: x.videoId, title: x.title, artist: x.artists?.map(a=>a.name).join(", ")||"", album:"", coverUrl: x.thumbnails?.[x.thumbnails.length-1]?.url||"", audioUrl: x.videoId===s.videoId?url:"", duration: x.duration_seconds||0 }));
+    const q = queue.map(x=>({ id: x.videoId, title: x.title, artist: x.artists?.map(a=>a.name).join(", ")||"", album:"", coverUrl: x.thumbnails?.[x.thumbnails.length-1]?.url||"", audioUrl: "", duration: x.duration_seconds||0 }));
     const base = { ...q.find(x=>x.id===s.videoId)!, coverUrl: thumb || q.find(x=>x.id===s.videoId)!.coverUrl, artist } as never;
     playSong(base, q as never);
     fetch(`/api/yt/lyrics/${s.videoId}`).then(r=>r.json()).then(d=>{
@@ -113,8 +111,8 @@ export default function HomePage() {
 function Header({ filter, setFilter }: { filter: Filter; setFilter: (f: Filter)=>void }) {
   const { setDrawerOpen } = useUiStore();
   return (
-    <div className="sticky top-0 z-30 bg-[#121212]/95 backdrop-blur supports-[backdrop-filter]:bg-[#121212]/80">
-      <div className="flex items-center gap-3 px-4 pt-3 pb-2">
+    <div className="sticky top-0 z-30 bg-[#121212]/95 backdrop-blur supports-[backdrop-filter]:bg-[#121212]/80 pt-[env(safe-area-inset-top)]">
+      <div className="flex items-center gap-3 px-4 pt-4 pb-3">
         <button onClick={()=>setDrawerOpen(true)} aria-label="Open menu" className="min-w-[44px] min-h-[44px] rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
           <Image src={USER.avatar} alt={USER.name} width={32} height={32} className="object-cover w-8 h-8 rounded-full" unoptimized/>
         </button>

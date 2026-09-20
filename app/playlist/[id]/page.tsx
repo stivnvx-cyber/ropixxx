@@ -29,13 +29,13 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
           </div>
         </div>
         <div className="flex gap-3 px-6 py-4">
-          <button onClick={async()=>{ if(!songs.length) return; const f=await fetch(`/api/yt/stream/${songs[0].id}`).then(r=>r.json()).catch(()=>null); const url=f?.url || ""; const first = { ...songs[0], audioUrl: url || songs[0].audioUrl }; playSong(first as never, songs as never); }} className="w-14 h-14 rounded-full bg-[#1DB954] flex items-center justify-center press"><Play className="w-6 h-6 fill-black text-black ml-0.5"/></button>
+          <button onClick={()=>{ if(!songs.length) return; playSong(songs[0] as never, songs as never); }} className="w-14 h-14 rounded-full bg-[#1DB954] flex items-center justify-center press"><Play className="w-6 h-6 fill-black text-black ml-0.5"/></button>
           <button onClick={()=>toggleFavorite(local.id)} className={`min-w-[44px] min-h-[44px] flex items-center justify-center ${isFav?"text-[#1DB954]":"text-white"}`}><Heart className={`w-6 h-6 ${isFav?"fill-current":""}`}/></button>
         </div>
         <div className="px-4 space-y-1">
           {songs.length===0 ? <p className="text-sm text-[#B3B3B3] px-2 py-8 text-center">Empty — add songs from Search (+) </p> : songs.map((s,idx)=>(
             <div key={s.id} className="flex items-center gap-3 px-2 py-2 rounded-md hover:bg-white/10 group">
-              <button onClick={async()=>{ const cur=currentSong?.id===s.id; if(cur){ togglePlay(); return; } const f=await fetch(`/api/yt/stream/${s.id}`).then(r=>r.json()).catch(()=>null); const url=f?.url || ""; const song = { ...s, audioUrl: url || s.audioUrl }; if(url) playSong(song as never, songs as never); }} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+              <button onClick={()=>{ const cur=currentSong?.id===s.id; if(cur){ togglePlay(); return; } playSong(s as never, songs as never); }} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                 <span className="w-6 text-center text-xs text-[#B3B3B3]">{idx+1}</span>
                 <div className="relative w-10 h-10 rounded overflow-hidden bg-[#282828] flex-shrink-0">{s.coverUrl ? <Image src={s.coverUrl} alt={s.title} fill className="object-cover" sizes="40px" unoptimized/> : null}</div>
                 <div className="flex-1 min-w-0"><p className="text-sm font-semibold text-white truncate">{s.title}</p><p className="text-xs text-[#B3B3B3] truncate">{s.artist}</p></div>
@@ -59,12 +59,12 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
         </div>
       </div>
       <div className="flex gap-3 px-6 py-4">
-        <button onClick={async()=>{ if(!tracks.length) return; const s=tracks[0]; const f=await fetch(`/api/yt/stream/${s.videoId}`).then(r=>r.json()).catch(()=>null); const url=f?.url; if(!url) return; playSong({ id:s.videoId, title:s.title, artist:s.artists?.map(a=>a.name).join(", ")||"", album:"", coverUrl:s.thumbnails?.[s.thumbnails.length-1]?.url||"", audioUrl:url, duration:0 } as never, [] as never); }} className="w-14 h-14 rounded-full bg-[#1DB954] flex items-center justify-center"><Play className="w-6 h-6 fill-black text-black ml-0.5"/></button>
+        <button onClick={()=>{ if(!tracks.length) return; const s=tracks[0]; playSong({ id:s.videoId, title:s.title, artist:s.artists?.map(a=>a.name).join(", ")||"", album:"", coverUrl:s.thumbnails?.[s.thumbnails.length-1]?.url||"", audioUrl:"", duration:0 } as never, [] as never); }} className="w-14 h-14 rounded-full bg-[#1DB954] flex items-center justify-center"><Play className="w-6 h-6 fill-black text-black ml-0.5"/></button>
         <button className="min-w-[44px] min-h-[44px] flex items-center justify-center text-white"><Shuffle className="w-5 h-5"/></button>
       </div>
       <div className="px-2 space-y-1">
         {tracks.map((t,idx)=>(
-          <button key={t.videoId+idx} onClick={async()=>{ if(currentSong?.id===t.videoId){ togglePlay(); return; } const f=await fetch(`/api/yt/stream/${t.videoId}`).then(r=>r.json()).catch(()=>null); const url=f?.url; if(!url) return; playSong({ id:t.videoId, title:t.title, artist:t.artists?.map(a=>a.name).join(", ")||"", album:"", coverUrl:t.thumbnails?.[t.thumbnails.length-1]?.url||"", audioUrl:url, duration:0 } as never, [] as never); }} className="flex items-center gap-3 w-full text-left px-2 py-2 rounded-md hover:bg-white/10">
+          <button key={t.videoId+idx} onClick={()=>{ if(currentSong?.id===t.videoId){ togglePlay(); return; } playSong({ id:t.videoId, title:t.title, artist:t.artists?.map(a=>a.name).join(", ")||"", album:"", coverUrl:t.thumbnails?.[t.thumbnails.length-1]?.url||"", audioUrl:"", duration:0 } as never, [] as never); }} className="flex items-center gap-3 w-full text-left px-2 py-2 rounded-md hover:bg-white/10">
             <span className="w-6 text-center text-xs text-[#B3B3B3]">{idx+1}</span>
             <div className="relative w-10 h-10 rounded overflow-hidden bg-[#282828] flex-shrink-0">{t.thumbnails?.[0] ? <Image src={t.thumbnails[t.thumbnails.length-1].url} alt={t.title} fill className="object-cover" sizes="40px" unoptimized/> : null}</div>
             <div className="flex-1 min-w-0"><p className="text-sm font-semibold text-white truncate">{t.title}</p><p className="text-xs text-[#B3B3B3] truncate">{t.artists?.map(a=>a.name).join(", ")}</p></div>

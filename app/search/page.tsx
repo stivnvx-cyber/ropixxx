@@ -53,9 +53,7 @@ export default function SearchPage() {
   async function playYt(item: YtItem) {
     if (!item.videoId) return;
     try {
-      const s = await fetch(`/api/yt/stream/${item.videoId}`).then((r) => r.json());
-      const url: string = s.url || "";
-      const queue = results.map((r) => ({ id: r.videoId!, title: r.title, artist: r.artists?.map((a) => a.name).join(", ") || r.artist || "", album: "", coverUrl: r.thumbnails?.[r.thumbnails.length - 1]?.url || "", audioUrl: r.videoId === item.videoId ? url : "", duration: r.duration_seconds || 0 } as const));
+      const queue = results.map((r) => ({ id: r.videoId!, title: r.title, artist: r.artists?.map((a) => a.name).join(", ") || r.artist || "", album: "", coverUrl: r.thumbnails?.[r.thumbnails.length - 1]?.url || "", audioUrl: "", duration: r.duration_seconds || 0 } as const));
       const song = queue.find((x) => x.id === item.videoId) as never;
       playSong(song, queue as never);
       fetch(`/api/yt/lyrics/${item.videoId}`).then((r)=>r.json()).then((d)=>{
@@ -71,7 +69,7 @@ export default function SearchPage() {
   }
   return (
     <div>
-      <div className="sticky top-0 z-10 bg-[#121212] px-4 pt-3 pb-3">
+      <div className="sticky top-0 z-10 bg-[#121212] px-4 pt-[calc(12px+env(safe-area-inset-top))] pb-3">
         <div className="flex items-center gap-3 mb-3">
           <button onClick={() => setDrawerOpen(true)} aria-label="Open menu" className="min-w-[44px] min-h-[44px] rounded-full overflow-hidden flex items-center justify-center"><Image src={USER.avatar} alt="avatar" width={32} height={32} className="object-cover" /></button>
           <h1 className="text-xl font-bold text-white flex-1">Search</h1>

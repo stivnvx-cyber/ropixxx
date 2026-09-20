@@ -16,7 +16,7 @@ export default function LibraryPage() {
   const { playlists, create, delete: delPl } = usePlaylistStore();
   const filtered = playlists.filter(p=> p.title.toLowerCase().includes(q.toLowerCase()));
   return (
-    <div className="px-4 py-3">
+    <div className="px-4 pt-[calc(12px+env(safe-area-inset-top))] pb-3">
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-xl font-bold text-white">Your Library</h1>
         <div className="flex gap-1">
