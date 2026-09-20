@@ -16,57 +16,123 @@ function ytFilterToType(f?: string): "song" | "video" | "album" | "playlist" | "
   return map[f.toLowerCase()] || "song";
 }
 
+function mapItem(item: any) {
+  return {
+    videoId: item.id || item.videoId || "",
+    title: item.title || item.name || item.title?.text || "",
+    artists: item.artists || item.authors || (item.author ? [item.author] : []),
+    thumbnails: (item.thumbnails || item.thumbnail?.contents || []).map((t: any) => ({ url: t.url, width: t.width, height: t.height })),
+    duration: item.duration?.text || "",
+    duration_seconds: item.duration?.seconds ?? item.duration?.duration_seconds ?? 0,
+    resultType: item.item_type || item.type || "song",
+    album: item.album?.name || item.album?.text,
+  };
+}
+
 export async function ytSearch(q: string, filter?: string, limit = 20) {
   const inn = await getYT();
   const type = ytFilterToType(filter);
-  const r = await inn.music.search(q, type ? { type } : undefined);
-  const shelf = r.songs || r.videos || r.albums || r.playlists || r.artists;
-  const items = shelf?.contents || r.contents;
-  return (items || []).slice(0, limit).map((item: any) => {
-    if (item.item_type === "song" || item.item_type === "video") {
-      return {
-        videoId: item.id || "",
-        title: item.title || "",
-        artists: item.artists || [],
-        thumbnails: (item.thumbnails || []).map((t: any) => ({ url: t.url, width: t.width, height: t.height })),
-        duration: item.duration?.text || "",
-        duration_seconds: item.duration?.seconds || 0,
-        resultType: item.item_type,
-        album: item.album?.name,
-      };
+  try {
+    const r: any = await inn.music.search(q, type ? { type } : undefined);
+    let items: any[] = [];
+    if (type) {
+      const shelf = r.songs || r.videos || r.albums || r.playlists || r.artists;
+      if (shelf?.contents?.length) items = shelf.contents;
+      else if (Array.isArray(r.contents)) {
+        for (const sec of r.contents) {
+          if (sec.type === "MusicShelf" && sec.contents?.length) items.push(...sec.contents);
+          else if (sec.type === "ItemSection" && sec.contents) {
+            for (const inner of sec.contents) if (inner.type === "MusicShelf" && inner.contents) items.push(...inner.contents);
+          }
+        }
+      }
+    } else {
+      for (const sec of (r.contents || [])) {
+        if (sec.type === "MusicShelf" && sec.contents) items.push(...sec.contents);
+        else if (sec.type === "ItemSection" && sec.contents) {
+          for (const inner of sec.contents) if (inner.type === "MusicShelf" && inner.contents) items.push(...inner.contents);
+        } else if (sec.type === "MusicCardShelf" && (sec as any).contents) items.push(...(sec as any).contents);
+      }
+      if (!items.length) {
+        const shelf = r.songs || r.videos;
+        if (shelf?.contents) items = shelf.contents;
+      }
+      if (!items.length && Array.isArray(r.contents)) items = r.contents;
     }
-    return {
-      videoId: item.id || "",
-      title: item.title?.text || item.name || "",
-      artists: item.artists || item.authors || item.author || [],
-      thumbnails: (item.thumbnails || []).map((t: any) => ({ url: t.url, width: t.width, height: t.height })),
-      duration: item.duration?.text || "",
-      duration_seconds: item.duration?.seconds || 0,
-      resultType: item.item_type || item.type || "unknown",
-      album: item.album?.name,
-    };
+    const mapped = items.slice(0, limit * 2).map(mapItem).filter((x) => x.videoId);
+    if (mapped.length) return mapped.slice(0, limit);
+  } catch {}
+  const raw = await ytmSearchRaw(q, limit);
+  if (raw.length) return raw;
+  return [];
+}
+
+async function ytmSearchRaw(q: string, limit: number) {
+  try {
+    const r = await fetch("https://music.youtube.com/youtubei/v1/search?alt=json&key=AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://music.youtube.com", "user-agent": "Mozilla/5.0" },
+      body: JSON.stringify({ query: q, context: { client: { clientName: "WEB_REMIX", clientVersion: "1.20240102.01.00" } } }),
+    });
+    const j: any = await r.json();
+    const tabs = j.contents?.tabbedSearchResultsRenderer?.tabs;
+    const sectionList = tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents || [];
+    const out: any[] = [];
+    for (const sec of sectionList) {
+      const s = sec as any;
+      if (s.musicShelfRenderer?.contents) {
+        for (const c of s.musicShelfRenderer.contents) {
+          const d = c.musicResponsiveListItemRenderer;
+          if (!d) continue;
+          const flex0 = d.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text || "";
+          const flex1 = d.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map((x: any) => x.text).join("") || "";
+          const vid = d.playlistItemData?.videoId || d.navigationEndpoint?.watchEndpoint?.videoId || d.doubleTapCommand?.watchEndpoint?.videoId || "";
+          if (!vid) continue;
+          const thumbs = d.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
+          out.push({ videoId: vid, title: flex0, artists: [{ name: flex1 }], thumbnails: thumbs.map((t: any) => ({ url: t.url })), duration: "", duration_seconds: 0, resultType: "song" });
+        }
+      }
+    }
+    return out.slice(0, limit);
+  } catch { return []; }
+}
+
+async function fetchPlayerRaw(videoId: string, clientName: string, clientVersion: string, domain: string) {
+  const endpoint = domain + "/youtubei/v1/player?alt=json&key=AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30";
+  const r = await fetch(endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: domain, "user-agent": "Mozilla/5.0" },
+    body: JSON.stringify({ context: { client: { clientName, clientVersion } }, videoId }),
   });
+  if (!r.ok) throw new Error("player " + r.status);
+  return r.json() as Promise<any>;
 }
 
 export async function ytStream(videoId: string) {
   const inn = await getYT();
-  const clients: Array<undefined | string> = [undefined, "YTMUSIC", "ANDROID", "ANDROID_MUSIC"];
   let lastErr: unknown = null;
-  for (const client of clients) {
+  const tryClients: Array<string | undefined> = [undefined, "YTMUSIC", "ANDROID", "IOS", "WEB"];
+  for (const client of tryClients) {
     try {
-      const info: any = client
-        ? await inn.getInfo(videoId, { client: client as never })
-        : await inn.getInfo(videoId);
-      const musicInfo: any = client ? null : await inn.music.getInfo(videoId).catch(() => null);
+      const info: any = client ? await inn.getInfo(videoId, { client: client as never }) : await inn.getInfo(videoId);
+      const musicInfo: any = !client ? await inn.music.getInfo(videoId).catch(() => null) : null;
+      const sd = info?.streaming_data || info?.streamingData;
+      const msd = musicInfo?.streaming_data || musicInfo?.streamingData;
       const candidates: any[] = [];
-      if (info?.streaming_data?.adaptive_formats) candidates.push(...info.streaming_data.adaptive_formats);
-      if (info?.streaming_data?.formats) candidates.push(...info.streaming_data.formats);
-      if (musicInfo?.streaming_data?.adaptive_formats) candidates.push(...musicInfo.streaming_data.adaptive_formats);
-      const audioOnly = candidates.filter((f: any) => f.mime_type?.startsWith("audio/") && f.url)
-        .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-      if (audioOnly.length) {
-        const best = audioOnly[0] as any;
-        const ext = best.mime_type?.includes("webm") ? "webm" : best.mime_type?.includes("mp4") ? "mp4" : "m4a";
+      if (sd?.adaptive_formats) candidates.push(...sd.adaptive_formats);
+      if (sd?.adaptiveFormats) candidates.push(...sd.adaptiveFormats);
+      if (sd?.formats) candidates.push(...sd.formats);
+      if (msd?.adaptive_formats) candidates.push(...msd.adaptive_formats);
+      if (msd?.adaptiveFormats) candidates.push(...msd.adaptiveFormats);
+      const audioOnly = candidates.filter((f: any) => {
+        const mime = f.mime_type || f.mimeType || "";
+        return mime.startsWith("audio/") && (f.url || f.signatureCipher || f.cipher);
+      });
+      const withUrl = audioOnly.filter((f: any) => f.url).sort((a: any, b: any) => (b.bitrate || b.bitRate || b.averageBitrate || 0) - (a.bitrate || a.bitRate || a.averageBitrate || 0));
+      if (withUrl.length) {
+        const best = withUrl[0] as any;
+        const mime = best.mime_type || best.mimeType || "";
+        const ext = mime.includes("webm") ? "webm" : mime.includes("mp4") ? "mp4" : "m4a";
         return {
           videoId,
           title: info.basic_info?.title || musicInfo?.basic_info?.title || videoId,
@@ -78,12 +144,32 @@ export async function ytStream(videoId: string) {
       }
     } catch (e) { lastErr = e; }
   }
-  throw new Error("no audio url for " + videoId + (lastErr ? ": " + String(lastErr) : ""));
-}
-
-export async function ytStreamProxyUrl(videoId: string) {
-  const s = await ytStream(videoId);
-  return s.url;
+  const rawAttempts: Array<[string, string, string]> = [
+    ["ANDROID", "19.29.37", "https://www.youtube.com"],
+    ["IOS", "19.29.1", "https://www.youtube.com"],
+    ["WEB_REMIX", "1.20240102.01.00", "https://music.youtube.com"],
+  ];
+  for (const [cName, cVer, domain] of rawAttempts) {
+    try {
+      const data = await fetchPlayerRaw(videoId, cName, cVer, domain);
+      const sd = data.streamingData;
+      const candidates: any[] = [...(sd?.adaptiveFormats || []), ...(sd?.formats || [])];
+      const audio = candidates.filter((f: any) => (f.mimeType || "").startsWith("audio/") && f.url).sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+      if (audio[0]?.url) {
+        const mime = audio[0].mimeType || "";
+        const ext = mime.includes("webm") ? "webm" : mime.includes("mp4") ? "mp4" : "m4a";
+        return {
+          videoId,
+          title: data.videoDetails?.title || videoId,
+          duration: parseInt(data.videoDetails?.lengthSeconds || "0", 10),
+          url: audio[0].url,
+          ext,
+          thumbnail: data.videoDetails?.thumbnail?.thumbnails?.[0]?.url || "",
+        };
+      }
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error("no audio url for " + videoId + (lastErr ? ": " + String((lastErr as any)?.message || lastErr) : ""));
 }
 
 export async function ytLyrics(videoId: string) {
@@ -114,16 +200,20 @@ export async function ytLyrics(videoId: string) {
 
 export async function ytHome() {
   const inn = await getYT();
-  const trending = await inn.music.search("top hits", { type: "song" });
-  const shelf = trending.songs || trending.videos;
-  const items = (shelf?.contents || []).slice(0, 12).map((item: any) => ({
-    videoId: item.id || "",
-    title: item.title || "",
-    artists: item.artists || [],
-    thumbnails: (item.thumbnails || []).map((t: any) => ({ url: t.url, width: t.width, height: t.height })),
-    duration_seconds: item.duration?.seconds || 0,
-  }));
-  return { trending: items, mood: [] };
+  try {
+    const trending = await inn.music.search("top hits", { type: "song" });
+    const shelf = trending.songs || trending.videos;
+    const items = (shelf?.contents || []).slice(0, 12).map((item: any) => ({
+      videoId: item.id || "",
+      title: item.title || "",
+      artists: item.artists || [],
+      thumbnails: (item.thumbnails || []).map((t: any) => ({ url: t.url, width: t.width, height: t.height })),
+      duration_seconds: item.duration?.seconds || 0,
+    })).filter((x: any) => x.videoId);
+    if (items.length) return { trending: items, mood: [] };
+  } catch {}
+  const fallback = await ytmSearchRaw("top hits indonesia", 12);
+  return { trending: fallback, mood: [] };
 }
 
 export async function ytPlaylist(playlistId: string, limit = 100) {
