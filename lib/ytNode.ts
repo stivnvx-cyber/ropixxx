@@ -109,83 +109,92 @@ async function fetchPlayerRaw(videoId: string, clientName: string, clientVersion
 }
 
 export async function ytStream(videoId: string) {
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // Try cobalt.tools API first (most reliable)
+  try {
+    const cobaltRes = await fetch("https://api.cobalt.tools/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ url: videoUrl, downloadMode: "audio", audioFormat: "mp3" }),
+    });
+    if (cobaltRes.ok) {
+      const cobaltData = await cobaltRes.json() as { url?: string; status?: string; error?: { code?: string } };
+      if (cobaltData.url) {
+        return {
+          videoId,
+          title: videoId,
+          duration: 0,
+          url: cobaltData.url,
+          ext: "mp3",
+          thumbnail: "",
+        };
+      }
+    }
+  } catch {}
+
+  // Fallback: youtubei.js with music.getInfo
   const inn = await getYT();
   let lastErr: unknown = null;
-  const tryClients: Array<string | undefined> = [undefined, "YTMUSIC", "IOS", "WEB", "ANDROID", "TV", "TV_EMBEDDED"];
-  for (const client of tryClients) {
-    try {
-      const info: any = client ? await inn.getInfo(videoId, { client: client as never }) : await inn.getInfo(videoId);
-      const musicInfo: any = !client ? await inn.music.getInfo(videoId).catch(() => null) : null;
-      const sd = info?.streaming_data || info?.streamingData || info?._streaming_data;
-      const msd = musicInfo?.streaming_data || musicInfo?.streamingData;
-      const candidates: any[] = [];
-      if (sd?.adaptive_formats) candidates.push(...sd.adaptive_formats);
-      if (sd?.adaptiveFormats) candidates.push(...sd.adaptiveFormats);
-      if (sd?.formats) candidates.push(...sd.formats);
-      if (msd?.adaptive_formats) candidates.push(...msd.adaptive_formats);
-      if (msd?.adaptiveFormats) candidates.push(...msd.adaptiveFormats);
-      if ((info as any)?.chooseFormat) {
-        try {
-          const fmt = (info as any).chooseFormat({ quality: "best", type: "audio" });
-          if (fmt?.url) candidates.unshift(fmt);
-          if (fmt?.decipher) {
-            const dec = (inn as any).session?.player?.decipher ? await (inn as any).session.player.decipher(fmt.signatureCipher || fmt.cipher) : null;
-            if (dec) candidates.unshift({ ...fmt, url: dec });
-          }
-        } catch {}
-      }
-      for (const f of candidates) {
-        if ((f.mime_type || f.mimeType || "").startsWith("audio/") && (f.signatureCipher || f.cipher) && !f.url && (inn as any).session?.player?.decipher) {
-          try {
-            const url = await (inn as any).session.player.decipher(f.signatureCipher || f.cipher);
-            if (url) f.url = url;
-          } catch {}
-        }
-      }
-      const withUrl = candidates.filter((f: any) => {
+  try {
+    const musicInfo: any = await inn.music.getInfo(videoId);
+    const sd = musicInfo?.streaming_data || musicInfo?.streamingData;
+    const candidates: any[] = [
+      ...(sd?.adaptive_formats || []),
+      ...(sd?.adaptiveFormats || []),
+      ...(sd?.formats || []),
+    ];
+    const withUrl = candidates
+      .filter((f: any) => {
         const mime = f.mime_type || f.mimeType || "";
         return mime.startsWith("audio/") && !!f.url;
-      }).sort((a: any, b: any) => (b.bitrate || b.bitRate || b.averageBitrate || 0) - (a.bitrate || a.bitRate || a.averageBitrate || 0));
+      })
+      .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+    if (withUrl.length) {
+      const best = withUrl[0] as any;
+      const mime = best.mime_type || best.mimeType || "";
+      const ext = mime.includes("webm") ? "webm" : mime.includes("mp4") ? "mp4" : "m4a";
+      return {
+        videoId,
+        title: musicInfo.basic_info?.title || videoId,
+        duration: musicInfo.basic_info?.duration || 0,
+        url: best.url,
+        ext,
+        thumbnail: musicInfo.basic_info?.thumbnail?.[0]?.url || "",
+      };
+    }
+  } catch (e) { lastErr = e; }
+
+  // Fallback: inn.getInfo with multiple clients
+  const tryClients = ["YTMUSIC", "IOS", "WEB", "ANDROID", "TV"] as const;
+  for (const client of tryClients) {
+    try {
+      const info: any = await inn.getInfo(videoId, { client: client as never });
+      const sd = info?.streaming_data || info?.streamingData;
+      const candidates: any[] = [
+        ...(sd?.adaptive_formats || []),
+        ...(sd?.adaptiveFormats || []),
+        ...(sd?.formats || []),
+      ];
+      const withUrl = candidates
+        .filter((f: any) => (f.mime_type || f.mimeType || "").startsWith("audio/") && !!f.url)
+        .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
       if (withUrl.length) {
         const best = withUrl[0] as any;
         const mime = best.mime_type || best.mimeType || "";
         const ext = mime.includes("webm") ? "webm" : mime.includes("mp4") ? "mp4" : "m4a";
         return {
           videoId,
-          title: info.basic_info?.title || musicInfo?.basic_info?.title || videoId,
-          duration: info.basic_info?.duration || musicInfo?.basic_info?.duration || 0,
+          title: info.basic_info?.title || videoId,
+          duration: info.basic_info?.duration || 0,
           url: best.url,
           ext,
-          thumbnail: info.basic_info?.thumbnail?.[0]?.url || musicInfo?.basic_info?.thumbnail?.[0]?.url || "",
+          thumbnail: info.basic_info?.thumbnail?.[0]?.url || "",
         };
       }
     } catch (e) { lastErr = e; }
   }
-  const rawAttempts: Array<[string, string, string]> = [
-    ["ANDROID", "20.07.35", "https://www.youtube.com"],
-    ["IOS", "20.07.33", "https://www.youtube.com"],
-    ["WEB", "2.20250102.01.00", "https://www.youtube.com"],
-  ];
-  for (const [cName, cVer, domain] of rawAttempts) {
-    try {
-      const data = await fetchPlayerRaw(videoId, cName, cVer, domain);
-      const sd = data.streamingData;
-      const candidates: any[] = [...(sd?.adaptiveFormats || []), ...(sd?.formats || [])];
-      const audio = candidates.filter((f: any) => (f.mimeType || "").startsWith("audio/") && f.url).sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-      if (audio[0]?.url) {
-        const mime = audio[0].mimeType || "";
-        const ext = mime.includes("webm") ? "webm" : mime.includes("mp4") ? "mp4" : "m4a";
-        return {
-          videoId,
-          title: data.videoDetails?.title || videoId,
-          duration: parseInt(data.videoDetails?.lengthSeconds || "0", 10),
-          url: audio[0].url,
-          ext,
-          thumbnail: data.videoDetails?.thumbnail?.thumbnails?.[0]?.url || "",
-        };
-      }
-    } catch (e) { lastErr = e; }
-  }
+
   throw new Error("no audio url for " + videoId + (lastErr ? ": " + String((lastErr as any)?.message || lastErr) : ""));
 }
 
