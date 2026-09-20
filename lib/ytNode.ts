@@ -111,12 +111,12 @@ async function fetchPlayerRaw(videoId: string, clientName: string, clientVersion
 export async function ytStream(videoId: string) {
   const inn = await getYT();
   let lastErr: unknown = null;
-  const tryClients: Array<string | undefined> = [undefined, "YTMUSIC", "ANDROID", "IOS", "WEB"];
+  const tryClients: Array<string | undefined> = [undefined, "YTMUSIC", "IOS", "WEB", "ANDROID", "TV", "TV_EMBEDDED"];
   for (const client of tryClients) {
     try {
       const info: any = client ? await inn.getInfo(videoId, { client: client as never }) : await inn.getInfo(videoId);
       const musicInfo: any = !client ? await inn.music.getInfo(videoId).catch(() => null) : null;
-      const sd = info?.streaming_data || info?.streamingData;
+      const sd = info?.streaming_data || info?.streamingData || info?._streaming_data;
       const msd = musicInfo?.streaming_data || musicInfo?.streamingData;
       const candidates: any[] = [];
       if (sd?.adaptive_formats) candidates.push(...sd.adaptive_formats);
@@ -124,11 +124,28 @@ export async function ytStream(videoId: string) {
       if (sd?.formats) candidates.push(...sd.formats);
       if (msd?.adaptive_formats) candidates.push(...msd.adaptive_formats);
       if (msd?.adaptiveFormats) candidates.push(...msd.adaptiveFormats);
-      const audioOnly = candidates.filter((f: any) => {
+      if ((info as any)?.chooseFormat) {
+        try {
+          const fmt = (info as any).chooseFormat({ quality: "best", type: "audio" });
+          if (fmt?.url) candidates.unshift(fmt);
+          if (fmt?.decipher) {
+            const dec = (inn as any).session?.player?.decipher ? await (inn as any).session.player.decipher(fmt.signatureCipher || fmt.cipher) : null;
+            if (dec) candidates.unshift({ ...fmt, url: dec });
+          }
+        } catch {}
+      }
+      for (const f of candidates) {
+        if ((f.mime_type || f.mimeType || "").startsWith("audio/") && (f.signatureCipher || f.cipher) && !f.url && (inn as any).session?.player?.decipher) {
+          try {
+            const url = await (inn as any).session.player.decipher(f.signatureCipher || f.cipher);
+            if (url) f.url = url;
+          } catch {}
+        }
+      }
+      const withUrl = candidates.filter((f: any) => {
         const mime = f.mime_type || f.mimeType || "";
-        return mime.startsWith("audio/") && (f.url || f.signatureCipher || f.cipher);
-      });
-      const withUrl = audioOnly.filter((f: any) => f.url).sort((a: any, b: any) => (b.bitrate || b.bitRate || b.averageBitrate || 0) - (a.bitrate || a.bitRate || a.averageBitrate || 0));
+        return mime.startsWith("audio/") && !!f.url;
+      }).sort((a: any, b: any) => (b.bitrate || b.bitRate || b.averageBitrate || 0) - (a.bitrate || a.bitRate || a.averageBitrate || 0));
       if (withUrl.length) {
         const best = withUrl[0] as any;
         const mime = best.mime_type || best.mimeType || "";
@@ -145,9 +162,9 @@ export async function ytStream(videoId: string) {
     } catch (e) { lastErr = e; }
   }
   const rawAttempts: Array<[string, string, string]> = [
-    ["ANDROID", "19.29.37", "https://www.youtube.com"],
-    ["IOS", "19.29.1", "https://www.youtube.com"],
-    ["WEB_REMIX", "1.20240102.01.00", "https://music.youtube.com"],
+    ["ANDROID", "20.07.35", "https://www.youtube.com"],
+    ["IOS", "20.07.33", "https://www.youtube.com"],
+    ["WEB", "2.20250102.01.00", "https://www.youtube.com"],
   ];
   for (const [cName, cVer, domain] of rawAttempts) {
     try {
