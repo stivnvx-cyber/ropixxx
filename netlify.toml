@@ -1,0 +1,3 @@
+[build]
+  command = "npx next build --no-turbopack"
+  publish = ".next"
