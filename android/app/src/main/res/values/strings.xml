@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ropixxx</string>
+    <string name="title_activity_main">Ropixxx</string>
+    <string name="package_name">com.ropixxx.app</string>
+    <string name="custom_url_scheme">com.ropixxx.app</string>
+</resources>
